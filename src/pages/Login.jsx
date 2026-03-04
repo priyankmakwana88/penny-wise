@@ -21,44 +21,47 @@ export default function Login() {
 
     try {
       if (isLogin) {
-        // Handle Login
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
-        
-        navigate('/'); // Redirect to dashboard on success
-      } else {
-        // Handle Registration
-        const { data: authData, error: authError } = await supabase.auth.signUp({
+        // --- LOGIN LOGIC ---
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (authError) throw authError;
 
-        // Create the user profile in our public.users table
-        if (authData.user) {
-          const { error: profileError } = await supabase
-            .from('users')
-            .insert([{ 
-              id: authData.user.id, 
-              email: email, 
-              name: name 
-            }]);
-            
-          if (profileError) throw profileError;
+        // CRUCIAL: Verify they actually have a profile in our database
+        const { data: profile, error: profileError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', authData.user.id)
+          .single();
+
+        if (profileError || !profile) {
+          await supabase.auth.signOut();
+          throw new Error("No account found. Please switch to 'Create Account' and sign up first.");
         }
 
-        // Auto-login after registration
-        navigate('/');
+        navigate('/'); // Success! Send to dashboard.
+        
+      } else {
+        // --- SIGNUP LOGIC ---
+        const { error: authError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name, // The SQL trigger grabs this and puts it in public.users!
+            }
+          }
+        });
+        if (authError) throw authError;
+
+        // Success! The database trigger already created their profile.
+        alert("Account created successfully! You can now sign in.");
+        setIsLogin(true); // Switch UI to login mode
+        setPassword(''); // Clear password for safety
       }
     } catch (err) {
-      const msg =
-        err?.message === 'Failed to fetch'
-          ? 'Network error connecting to Supabase. Verify `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in `.env.local`, restart the dev server, then try again.'
-          : err?.message || 'Something went wrong.';
-      setError(msg);
+      setError(err?.message || 'Something went wrong.');
     } finally {
       setLoading(false);
     }
@@ -134,6 +137,7 @@ export default function Login() {
 
         <div className="mt-6 text-center">
           <button
+            type="button"
             onClick={() => {
               setIsLogin(!isLogin);
               setError(null);

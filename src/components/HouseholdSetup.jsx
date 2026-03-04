@@ -20,7 +20,7 @@ export default function HouseholdSetup({ user, onComplete }) {
       // 1. Create the new household in the database
       const { data: newHouse, error: houseError } = await supabase
         .from('households')
-        .insert([{ name: houseName, currency: 'INR' }])
+        .insert([{ name: houseName }])
         .select()
         .single();
 
@@ -34,8 +34,9 @@ export default function HouseholdSetup({ user, onComplete }) {
 
       if (userError) throw userError;
 
-      // 3. Tell the Dashboard to refresh!
-      onComplete();
+      // 3. Force the browser to reload so it fetches your new household status!
+      window.location.reload();
+      
     } catch (err) {
       setError(err.message);
     } finally {
@@ -66,8 +67,9 @@ export default function HouseholdSetup({ user, onComplete }) {
 
       if (userError) throw userError;
 
-      // 3. Tell the Dashboard to refresh!
-      onComplete();
+      // 3. Force the browser to reload so it fetches your new household status!
+      window.location.reload();
+
     } catch (err) {
       setError(err.message);
     } finally {

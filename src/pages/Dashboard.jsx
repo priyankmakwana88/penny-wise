@@ -67,23 +67,37 @@ export default function Dashboard() {
     if (!user) return;
     setLoadingProfile(true);
     
-    const { data, error } = await supabase
-      .from('users')
-      .select('*, households(name)')
-      .eq('id', user.id)
-      .single();
-    
-    if (error && error.code === 'PGRST116') {
-      const { data: newProfile } = await supabase
+    try {
+      // 1. Fetch just the user profile (Safe, no complex joins)
+      const { data: userData, error: userError } = await supabase
         .from('users')
-        .insert([{ id: user.id, email: user.email, name: 'Penny Wise User' }])
-        .select()
+        .select('*')
+        .eq('id', user.id)
         .single();
-      setProfile(newProfile);
-    } else if (!error && data) {
-      setProfile(data);
+      
+      if (userError) throw userError;
+
+      // 2. If they have a household, fetch the name separately
+      if (userData && userData.household_id) {
+        const { data: houseData, error: houseError } = await supabase
+          .from('households')
+          .select('name')
+          .eq('id', userData.household_id)
+          .single();
+          
+        if (!houseError) {
+          userData.households = houseData; // Attach it so your UI works normally
+        }
+      }
+      
+      setProfile(userData);
+
+    } catch (err) {
+      console.error("Dashboard Locked Error:", err);
+      alert("Failed to load your profile. Please check the browser console.");
+    } finally {
+      setLoadingProfile(false);
     }
-    setLoadingProfile(false);
   };
 
   const fetchDashboardData = async () => {
