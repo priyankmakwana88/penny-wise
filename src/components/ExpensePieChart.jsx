@@ -66,7 +66,7 @@ export default function ExpensePieChart({ householdId, refreshTrigger }) {
   }
 
   return (
-    <div className="h-[350px] w-full mt-4" style={{ minHeight: '350px' }}>
+    <div style={{ width: '100%', height: 300, minHeight: 300 }}>
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie

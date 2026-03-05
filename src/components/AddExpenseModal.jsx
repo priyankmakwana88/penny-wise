@@ -203,6 +203,31 @@ export default function AddExpenseModal({ isOpen, onClose, householdId, currentU
     }
   };
 
+  const handleDelete = async () => {
+    // 1. Ask for confirmation so they don't click it accidentally
+    if (!window.confirm("Are you sure you want to delete this expense? This cannot be undone.")) {
+      return;
+    }
+
+    try {
+      // 2. Tell Supabase to delete the row matching this ID
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', existingExpense.id);
+
+      if (error) throw error;
+
+      // 3. Refresh the dashboard and close the modal
+      onSave(); 
+      onClose();
+
+    } catch (err) {
+      console.error("Error deleting expense:", err);
+      alert("Could not delete the expense. Please try again.");
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -318,11 +343,30 @@ export default function AddExpenseModal({ isOpen, onClose, householdId, currentU
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end space-x-3">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 font-semibold hover:bg-gray-100 rounded-lg">Cancel</button>
-          <button type="submit" form="expense-form" disabled={loading} className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50">
-            {loading ? 'Saving...' : 'Save Expense'}
-          </button>
+        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
+          {/* LEFT SIDE: Delete Button (Only shows if editing an existing expense) */}
+          <div>
+            {existingExpense && (
+              <button 
+                type="button" 
+                onClick={handleDelete} 
+                disabled={loading}
+                className="px-4 py-2 text-red-600 font-semibold hover:bg-red-50 rounded-lg transition-colors"
+              >
+                Delete Expense
+              </button>
+            )}
+          </div>
+
+          {/* RIGHT SIDE: Cancel and Save Buttons */}
+          <div className="flex space-x-3">
+            <button type="button" onClick={onClose} disabled={loading} className="px-4 py-2 text-gray-600 font-semibold hover:bg-gray-100 rounded-lg">
+              Cancel
+            </button>
+            <button type="submit" form="expense-form" disabled={loading} className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50">
+              {loading ? 'Processing...' : (existingExpense ? 'Update Expense' : 'Save Expense')}
+            </button>
+          </div>
         </div>
 
       </div>
