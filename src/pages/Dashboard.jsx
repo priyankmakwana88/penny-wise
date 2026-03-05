@@ -370,7 +370,7 @@ export default function Dashboard() {
                 <p>No expenses logged yet.</p>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto max-h-[280px] pr-2">
+              <div className="flex-1 overflow-y-auto max-h-[600px] pr-2">
                 
                 {/* GROUPED EXPENSES RENDER LOGIC */}
                 <div className="space-y-6">
