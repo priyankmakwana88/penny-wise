@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabaseClient';
-import { LogOut, Home, PlusCircle, Settings, Receipt, Activity, ArrowRightLeft } from 'lucide-react';
+import { LogOut, Home, PlusCircle, Settings, Receipt, Activity, ArrowRightLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import HouseholdSetup from '../components/HouseholdSetup';
 import CategoryManager from '../components/CategoryManager';
 import AddExpenseModal from '../components/AddExpenseModal';
@@ -39,6 +39,23 @@ const getCategoryStyle = (dbColorChoice, description) => {
   return { ...style, Icon: Receipt }; 
 };
 
+// Groups expenses by month/year sequentially
+const groupExpensesByMonth = (expenses) => {
+  const groups = [];
+  expenses.forEach(expense => {
+    const date = new Date(expense.expense_date);
+    const monthYear = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+    
+    const lastGroup = groups[groups.length - 1];
+    if (!lastGroup || lastGroup.monthYear !== monthYear) {
+      groups.push({ monthYear, expenses: [expense] });
+    } else {
+      lastGroup.expenses.push(expense);
+    }
+  });
+  return groups;
+};
+
 export default function Dashboard() {
   const { user } = useAuth();
   const [profile, setProfile] = useState(null);
@@ -47,6 +64,7 @@ export default function Dashboard() {
   // Modal States
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [collapsedMonths, setCollapsedMonths] = useState({});
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isSettlementsModalOpen, setIsSettlementsModalOpen] = useState(false);
   const [isTrendsModalOpen, setIsTrendsModalOpen] = useState(false);
@@ -62,6 +80,13 @@ export default function Dashboard() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [updateTrigger, setUpdateTrigger] = useState(0);
   const [editingExpense, setEditingExpense] = useState(null);
+
+  const toggleMonth = (monthYear) => {
+    setCollapsedMonths(prev => ({
+      ...prev,
+      [monthYear]: !prev[monthYear]
+    }));
+  };
 
   const fetchProfile = async () => {
     if (!user) return;
@@ -103,7 +128,7 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     if (!profile?.household_id) return;
 
-    // 1. Fetch Initial Page of Recent Expenses (Now includes category color!)
+    // 1. Fetch Initial Page of Recent Expenses
     const { data: expenses } = await supabase
       .from('expenses')
       .select(`
@@ -141,7 +166,7 @@ export default function Dashboard() {
       setMonthlyTotal(personalTotal);
     }
 
-    // Query B: Total Household Spend (From main expenses table)
+    // Query B: Total Household Spend
     const { data: householdExpenses } = await supabase
       .from('expenses')
       .select('amount, description')
@@ -182,7 +207,6 @@ export default function Dashboard() {
     setUpdateTrigger(prev => prev + 1);
   };
   
-  // NEW: Function to load the next page of expenses (Now includes category color!)
   const loadMoreExpenses = async () => {
     setIsLoadingMore(true);
     const currentLength = recentExpenses.length;
@@ -318,7 +342,6 @@ export default function Dashboard() {
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Pie Chart Card */}
           <div className="space-y-6 flex flex-col">
             {/* Pie Chart Card */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[350px]">
@@ -326,7 +349,7 @@ export default function Dashboard() {
               <ExpensePieChart householdId={profile.household_id} refreshTrigger={updateTrigger} />
             </div>
 
-            {/* NEW: Budget Health Card */}
+            {/* Budget Health Card */}
             <BudgetProgress householdId={profile.household_id} refreshTrigger={updateTrigger} />
           </div>
 
@@ -348,42 +371,74 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="flex-1 overflow-y-auto max-h-[280px] pr-2">
-                <ul className="space-y-4">
-                  {recentExpenses.map((expense, index) => {
-                    // Call the helper function to get the dynamic styles
-                    const { Icon, bg, text } = getCategoryStyle(expense.categories?.color, expense.description);
+                
+                {/* GROUPED EXPENSES RENDER LOGIC */}
+                <div className="space-y-6">
+                {groupExpensesByMonth(recentExpenses).map((group, groupIndex) => {
+                    const isCollapsed = collapsedMonths[group.monthYear];
 
                     return (
-                      <li 
-                        key={`${expense.id}-${index}`} 
-                        onClick={() => {
-                          setEditingExpense(expense);
-                          setIsExpenseModalOpen(true);
-                        }}
-                        className="cursor-pointer flex justify-between items-center p-3 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-100"
-                      >
-                        <div className="flex items-center space-x-4">
-                          {/* Apply the dynamic background and text colors */}
-                          <div className={`${bg} p-2 rounded-lg ${text} shrink-0`}>
-                            <Icon className="w-5 h-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-bold text-gray-900 truncate">{expense.description}</p>
-                            <p className="text-xs text-gray-500 truncate">
-                            {expense.description?.startsWith('Settled Up:') 
-                                ? 'Transfer' 
-                                : (expense.categories?.name || 'Untracked')} • Paid by {expense.users?.name === profile.name ? 'You' : expense.users?.name}
-                            </p>
-                          </div>
+                      <div key={groupIndex} className="relative">
+                        {/* Sticky Month Header - Now Clickable! */}
+                        <div 
+                          className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm py-2 mb-2 border-b border-gray-100 flex justify-between items-center cursor-pointer hover:text-blue-600 transition-colors group"
+                          onClick={() => toggleMonth(group.monthYear)}
+                        >
+                          <h4 className="text-xs font-bold text-gray-500 group-hover:text-blue-600 uppercase tracking-wider transition-colors">
+                            {group.monthYear}
+                          </h4>
+                          <button className="p-1 rounded-md hover:bg-gray-100 transition-colors">
+                            {isCollapsed ? (
+                              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-blue-600" />
+                            )}
+                          </button>
                         </div>
-                        <div className="text-right shrink-0 ml-4">
-                          <p className="font-bold text-gray-900">₹{parseFloat(expense.amount).toLocaleString('en-IN')}</p>
-                          <p className="text-xs text-gray-500">{new Date(expense.expense_date).toLocaleDateString()}</p>
-                        </div>
-                      </li>
+
+                        {/* Conditionally Render the Expense List */}
+                        {!isCollapsed && (
+                          <ul className="space-y-2 mb-4">
+                            {group.expenses.map((expense, index) => {
+                              const { Icon, bg, text } = getCategoryStyle(expense.categories?.color, expense.description);
+
+                              return (
+                                <li 
+                                  key={`${expense.id}-${index}`} 
+                                  onClick={() => {
+                                    setEditingExpense(expense);
+                                    setIsExpenseModalOpen(true);
+                                  }}
+                                  className="cursor-pointer flex justify-between items-center p-3 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-200"
+                                >
+                                  <div className="flex items-center space-x-4">
+                                    <div className={`${bg} p-2 rounded-lg ${text} shrink-0`}>
+                                      <Icon className="w-5 h-5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-gray-900 truncate">{expense.description}</p>
+                                      <p className="text-xs text-gray-500 truncate">
+                                        {expense.description?.startsWith('Settled Up:') 
+                                          ? 'Transfer' 
+                                          : (expense.categories?.name || 'Untracked')} • Paid by {expense.users?.name === profile.name ? 'You' : expense.users?.name}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="text-right shrink-0 ml-4">
+                                    <p className="font-bold text-gray-900">₹{parseFloat(expense.amount).toLocaleString('en-IN')}</p>
+                                    <p className="text-xs text-gray-500">
+                                      {new Date(expense.expense_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                    </p>
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
                     );
                   })}
-                </ul>
+                </div>
                 
                 {hasMoreExpenses && (
                   <button
