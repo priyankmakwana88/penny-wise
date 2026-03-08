@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabaseClient';
-import { LogOut, Home, PlusCircle, Settings, Receipt, Activity, ArrowRightLeft, ChevronDown, ChevronRight } from 'lucide-react';
+import { LogOut, Home, PlusCircle, Settings, Receipt, Activity, ArrowRightLeft, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react';
 import HouseholdSetup from '../components/HouseholdSetup';
 import CategoryManager from '../components/CategoryManager';
 import AddExpenseModal from '../components/AddExpenseModal';
@@ -16,12 +16,10 @@ const EXPENSES_PER_PAGE = 10;
 
 // Helper function for dynamic category colors
 const getCategoryStyle = (dbColorChoice, description) => {
-  // Check if it's a settlement transfer first
   if ((description || '').toLowerCase().startsWith('settled up:')) {
     return { Icon: ArrowRightLeft, bg: 'bg-green-100', text: 'text-green-600' };
   }
 
-  // Map the database string to Tailwind colors
   const colorMap = {
     'blue': { bg: 'bg-blue-100', text: 'text-blue-600' },
     'red': { bg: 'bg-red-100', text: 'text-red-600' },
@@ -33,9 +31,7 @@ const getCategoryStyle = (dbColorChoice, description) => {
     'amber': { bg: 'bg-amber-100', text: 'text-amber-600' },
   };
 
-  // Default to gray if the color is missing or not found
   const style = colorMap[dbColorChoice] || { bg: 'bg-gray-100', text: 'text-gray-600' };
-  
   return { ...style, Icon: Receipt }; 
 };
 
@@ -64,7 +60,6 @@ export default function Dashboard() {
   // Modal States
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
-  const [collapsedMonths, setCollapsedMonths] = useState({});
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isSettlementsModalOpen, setIsSettlementsModalOpen] = useState(false);
   const [isTrendsModalOpen, setIsTrendsModalOpen] = useState(false);
@@ -75,25 +70,25 @@ export default function Dashboard() {
   const [householdMonthlyTotal, setHouseholdMonthlyTotal] = useState(0);
   const [netBalance, setNetBalance] = useState(0);
 
+  // Filter States
+  const [householdMembers, setHouseholdMembers] = useState([]);
+  const [selectedPaidByFilters, setSelectedPaidByFilters] = useState([]);
+  
+  // UI States
+  const [collapsedMonths, setCollapsedMonths] = useState({});
+  const [selectedChartMonth, setSelectedChartMonth] = useState(new Date());
+
   // Pagination States
   const [hasMoreExpenses, setHasMoreExpenses] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [updateTrigger, setUpdateTrigger] = useState(0);
   const [editingExpense, setEditingExpense] = useState(null);
 
-  const toggleMonth = (monthYear) => {
-    setCollapsedMonths(prev => ({
-      ...prev,
-      [monthYear]: !prev[monthYear]
-    }));
-  };
-
   const fetchProfile = async () => {
     if (!user) return;
     setLoadingProfile(true);
     
     try {
-      // 1. Fetch just the user profile (Safe, no complex joins)
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
@@ -102,7 +97,6 @@ export default function Dashboard() {
       
       if (userError) throw userError;
 
-      // 2. If they have a household, fetch the name separately
       if (userData && userData.household_id) {
         const { data: houseData, error: houseError } = await supabase
           .from('households')
@@ -111,7 +105,7 @@ export default function Dashboard() {
           .single();
           
         if (!houseError) {
-          userData.households = houseData; // Attach it so your UI works normally
+          userData.households = houseData;
         }
       }
       
@@ -128,7 +122,13 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     if (!profile?.household_id) return;
 
-    // 1. Fetch Initial Page of Recent Expenses
+    // Fetch household members for the filter buttons
+    const { data: memberData } = await supabase
+      .from('users')
+      .select('id, name')
+      .eq('household_id', profile.household_id);
+    if (memberData) setHouseholdMembers(memberData);
+
     const { data: expenses } = await supabase
       .from('expenses')
       .select(`
@@ -146,11 +146,9 @@ export default function Dashboard() {
       setHasMoreExpenses(expenses.length === EXPENSES_PER_PAGE);
     }
 
-    // 2. Fetch Monthly Totals (Personal AND Household)
     const date = new Date();
     const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).toISOString();
 
-    // Query A: Your Personal Spend (From splits)
     const { data: userSplits } = await supabase
       .from('expense_splits')
       .select(`amount_owed, expenses!inner(description, expense_date, household_id)`)
@@ -166,7 +164,6 @@ export default function Dashboard() {
       setMonthlyTotal(personalTotal);
     }
 
-    // Query B: Total Household Spend
     const { data: householdExpenses } = await supabase
       .from('expenses')
       .select('amount, description')
@@ -181,7 +178,6 @@ export default function Dashboard() {
       setHouseholdMonthlyTotal(houseTotal);
     }
 
-    // 3. Calculate "Who owes Whom"
     const { data: splits } = await supabase
       .from('expense_splits')
       .select(`
@@ -229,6 +225,21 @@ export default function Dashboard() {
     setIsLoadingMore(false);
   };
 
+  const toggleMonth = (monthYear) => {
+    setCollapsedMonths(prev => ({
+      ...prev,
+      [monthYear]: !prev[monthYear]
+    }));
+  };
+
+  const toggleUserFilter = (userId) => {
+    setSelectedPaidByFilters(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
   useEffect(() => {
     fetchProfile();
   }, [user]);
@@ -245,6 +256,10 @@ export default function Dashboard() {
 
   if (loadingProfile) return <div className="min-h-screen flex items-center justify-center bg-gray-50">Loading your household...</div>;
   if (!profile || !profile.household_id) return <HouseholdSetup user={user} onComplete={fetchProfile} />;
+
+  const displayedExpenses = selectedPaidByFilters.length > 0
+    ? recentExpenses.filter(expense => selectedPaidByFilters.includes(expense.paid_by))
+    : recentExpenses;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -267,7 +282,6 @@ export default function Dashboard() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header Section */}
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Household Overview</h1>
           <div className="flex space-x-3">
@@ -288,7 +302,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-center relative">
           <div className="flex justify-between items-start">
@@ -297,7 +310,6 @@ export default function Dashboard() {
               <p className="text-3xl font-bold text-blue-600">₹{monthlyTotal.toLocaleString('en-IN')}</p>
             </div>
             
-            {/* COMPARE BUTTON */}
             <button 
               onClick={() => setIsTrendsModalOpen(true)}
               className="bg-blue-50 text-blue-600 p-2 rounded-lg hover:bg-blue-100 transition-colors"
@@ -340,21 +352,39 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-6 flex flex-col">
-            {/* Pie Chart Card */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[350px]">
-              <h3 className="font-bold text-gray-900 text-lg border-b pb-4 mb-4">This Month's Breakdown</h3>
-              <ExpensePieChart householdId={profile.household_id} refreshTrigger={updateTrigger} />
+            
+            {/* NEW: Month Selector for Charts */}
+            <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="font-bold text-gray-900">Monthly Reports</h3>
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={() => setSelectedChartMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))} 
+                  className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <span className="font-semibold text-gray-800 min-w-[100px] text-center">
+                  {selectedChartMonth.toLocaleString('default', { month: 'short', year: 'numeric' })}
+                </span>
+                <button 
+                  onClick={() => setSelectedChartMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))} 
+                  className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            {/* Budget Health Card */}
-            <BudgetProgress householdId={profile.household_id} refreshTrigger={updateTrigger} />
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[350px]">
+              <ExpensePieChart householdId={profile.household_id} refreshTrigger={updateTrigger} selectedMonth={selectedChartMonth} />
+            </div>
+
+            <BudgetProgress householdId={profile.household_id} refreshTrigger={updateTrigger} selectedMonth={selectedChartMonth} />
           </div>
 
-          {/* Recent Expenses Card */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[350px] flex flex-col">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col h-[600px]">
             <div className="flex justify-between items-center mb-4 border-b pb-4 shrink-0">
               <h3 className="font-bold text-gray-900 text-lg">Recent Expenses</h3>
               <ExportExcel 
@@ -364,22 +394,51 @@ export default function Dashboard() {
                 currentUserName={profile.name}
               />
             </div>
+
+            {householdMembers.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-4 shrink-0">
+                <button
+                  onClick={() => setSelectedPaidByFilters([])}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
+                    selectedPaidByFilters.length === 0 
+                      ? 'bg-gray-800 text-white border-gray-800' 
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  All Expenses
+                </button>
+                {householdMembers.map(member => (
+                  <button
+                    key={member.id}
+                    onClick={() => toggleUserFilter(member.id)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
+                      selectedPaidByFilters.includes(member.id)
+                        ? 'bg-blue-100 text-blue-700 border-blue-200'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    Paid by {member.name}
+                  </button>
+                ))}
+              </div>
+            )}
             
             {recentExpenses.length === 0 ? (
               <div className="flex items-center justify-center flex-1 text-gray-400">
                 <p>No expenses logged yet.</p>
               </div>
+            ) : displayedExpenses.length === 0 ? (
+               <div className="flex items-center justify-center flex-1 text-gray-400">
+                <p>No expenses match this filter.</p>
+              </div>
             ) : (
-              <div className="flex-1 overflow-y-auto max-h-[600px] pr-2">
-                
-                {/* GROUPED EXPENSES RENDER LOGIC */}
+              <div className="flex-1 overflow-y-auto pr-2">
                 <div className="space-y-6">
-                {groupExpensesByMonth(recentExpenses).map((group, groupIndex) => {
+                  {groupExpensesByMonth(displayedExpenses).map((group, groupIndex) => {
                     const isCollapsed = collapsedMonths[group.monthYear];
 
                     return (
                       <div key={groupIndex} className="relative">
-                        {/* Sticky Month Header - Now Clickable! */}
                         <div 
                           className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm py-2 mb-2 border-b border-gray-100 flex justify-between items-center cursor-pointer hover:text-blue-600 transition-colors group"
                           onClick={() => toggleMonth(group.monthYear)}
@@ -396,7 +455,6 @@ export default function Dashboard() {
                           </button>
                         </div>
 
-                        {/* Conditionally Render the Expense List */}
                         {!isCollapsed && (
                           <ul className="space-y-2 mb-4">
                             {group.expenses.map((expense, index) => {
@@ -454,7 +512,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Modals */}
         <CategoryManager 
           isOpen={isCategoryModalOpen} 
           onClose={() => setIsCategoryModalOpen(false)} 

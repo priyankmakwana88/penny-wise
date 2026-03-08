@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 
 const COLORS = ['#2563EB', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
 
-export default function ExpensePieChart({ householdId, refreshTrigger }) {
+export default function ExpensePieChart({ householdId, refreshTrigger, selectedMonth = new Date() }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -12,7 +12,8 @@ export default function ExpensePieChart({ householdId, refreshTrigger }) {
   const fetchChartData = useCallback(async () => {
     setLoading(true);
     
-    const date = new Date();
+    // Use the passed selectedMonth instead of strictly today
+    const date = new Date(selectedMonth);
     const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).toISOString();
     const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
@@ -45,7 +46,7 @@ export default function ExpensePieChart({ householdId, refreshTrigger }) {
       setTotal(runningTotal);
     }
     setLoading(false);
-  }, [householdId]);
+  }, [householdId, selectedMonth]);
 
   useEffect(() => {
     if (householdId) {
@@ -59,7 +60,7 @@ export default function ExpensePieChart({ householdId, refreshTrigger }) {
 
   if (data.length === 0) {
     return (
-      <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm border-2 border-dashed border-gray-100 rounded-lg m-4">
+      <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm border-2 border-dashed border-gray-100 rounded-lg m-4 bg-gray-50">
         No expenses this month to visualize.
       </div>
     );
@@ -84,7 +85,6 @@ export default function ExpensePieChart({ householdId, refreshTrigger }) {
             ))}
           </Pie>
 
-          {/* Central Total Label */}
           <text
             x="50%"
             y="48%"

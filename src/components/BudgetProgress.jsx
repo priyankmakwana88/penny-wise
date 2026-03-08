@@ -1,18 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { AlertCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-export default function BudgetProgress({ householdId, refreshTrigger }) {
+export default function BudgetProgress({ householdId, refreshTrigger, selectedMonth = new Date() }) {
   const [budgets, setBudgets] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (householdId) {
-      fetchBudgetHealth();
-    }
-  }, [householdId, refreshTrigger]);
-
-  const fetchBudgetHealth = async () => {
+  const fetchBudgetHealth = useCallback(async () => {
     setLoading(true);
     
     // 1. Fetch categories that actually have a budget set (> 0)
@@ -20,7 +14,7 @@ export default function BudgetProgress({ householdId, refreshTrigger }) {
       .from('categories')
       .select('id, name, monthly_budget, color')
       .eq('household_id', householdId)
-      .gt('monthly_budget', 0); // Ignore categories with 0 budget
+      .gt('monthly_budget', 0);
 
     if (!categories || categories.length === 0) {
       setBudgets([]);
@@ -28,15 +22,17 @@ export default function BudgetProgress({ householdId, refreshTrigger }) {
       return;
     }
 
-    // 2. Fetch all household expenses for the current month
-    const date = new Date();
+    // 2. Fetch all household expenses for the SELECTED month
+    const date = new Date(selectedMonth);
     const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).toISOString();
+    const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
     const { data: expenses } = await supabase
       .from('expenses')
       .select('amount, category_id, description')
       .eq('household_id', householdId)
-      .gte('expense_date', firstDay);
+      .gte('expense_date', firstDay)
+      .lte('expense_date', lastDay); // Added upper bound so it doesn't bleed into future months
 
     // 3. Map the spend to the categories
     const spendMap = {};
@@ -52,7 +48,6 @@ export default function BudgetProgress({ householdId, refreshTrigger }) {
       const spent = spendMap[cat.id] || 0;
       const rawPercentage = (spent / cat.monthly_budget) * 100;
       
-      // Cap the visual bar at 100% so it doesn't break the UI
       const visualPercentage = Math.min(rawPercentage, 100); 
       
       let status = 'good';
@@ -86,22 +81,28 @@ export default function BudgetProgress({ householdId, refreshTrigger }) {
         textClass,
         Icon
       };
-    }).sort((a, b) => b.rawPercentage - a.rawPercentage); // Show the most critical budgets at the top
+    }).sort((a, b) => b.rawPercentage - a.rawPercentage);
 
     setBudgets(progressData);
     setLoading(false);
-  };
+  }, [householdId, selectedMonth]);
+
+  useEffect(() => {
+    if (householdId) {
+      fetchBudgetHealth();
+    }
+  }, [householdId, refreshTrigger, fetchBudgetHealth]);
 
   if (loading) {
     return <div className="p-6 text-center text-gray-400">Loading budget health...</div>;
   }
 
   if (budgets.length === 0) {
-    return null; // Hide the entire section if no budgets are set up yet
+    return null;
   }
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mt-6">
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[350px]">
       <h3 className="font-bold text-gray-900 text-lg mb-4 border-b pb-4">Budget Health</h3>
       
       <div className="space-y-5">
@@ -122,7 +123,6 @@ export default function BudgetProgress({ householdId, refreshTrigger }) {
               </div>
             </div>
             
-            {/* The Progress Bar Container */}
             <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
               <div 
                 className={`h-2.5 rounded-full transition-all duration-500 ${item.colorClass}`} 
@@ -130,7 +130,6 @@ export default function BudgetProgress({ householdId, refreshTrigger }) {
               ></div>
             </div>
             
-            {/* Warning Text */}
             {item.status === 'over' && (
               <p className="text-xs text-red-600 mt-1 font-medium">Over budget by ₹{(item.spent - item.monthly_budget).toLocaleString('en-IN', { maximumFractionDigits: 0 })}!</p>
             )}
