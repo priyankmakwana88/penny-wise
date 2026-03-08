@@ -15,11 +15,27 @@ import BudgetProgress from '../components/BudgetProgress';
 const EXPENSES_PER_PAGE = 10;
 
 // Helper function for dynamic category colors
+// Helper function for dynamic category colors
 const getCategoryStyle = (dbColorChoice, description) => {
+  // 1. Check for settlements
   if ((description || '').toLowerCase().startsWith('settled up:')) {
-    return { Icon: ArrowRightLeft, bg: 'bg-green-100', text: 'text-green-600' };
+    return { Icon: ArrowRightLeft, bg: 'bg-green-100', text: 'text-green-600', customStyle: null };
   }
 
+  // 2. NEW: Check if it's a Hex Code from the new color picker
+  if (dbColorChoice && dbColorChoice.startsWith('#')) {
+    return {
+      Icon: Receipt,
+      bg: '', 
+      text: '', 
+      customStyle: {
+        backgroundColor: `${dbColorChoice}20`, // The '20' adds a beautiful 12% transparency for the background!
+        color: dbColorChoice
+      }
+    };
+  }
+
+  // 3. LEGACY: Fallback for old categories created before the color picker
   const colorMap = {
     'blue': { bg: 'bg-blue-100', text: 'text-blue-600' },
     'red': { bg: 'bg-red-100', text: 'text-red-600' },
@@ -32,7 +48,7 @@ const getCategoryStyle = (dbColorChoice, description) => {
   };
 
   const style = colorMap[dbColorChoice] || { bg: 'bg-gray-100', text: 'text-gray-600' };
-  return { ...style, Icon: Receipt }; 
+  return { ...style, Icon: Receipt, customStyle: null }; 
 };
 
 // Groups expenses by month/year sequentially
@@ -458,7 +474,7 @@ export default function Dashboard() {
                         {!isCollapsed && (
                           <ul className="space-y-2 mb-4">
                             {group.expenses.map((expense, index) => {
-                              const { Icon, bg, text } = getCategoryStyle(expense.categories?.color, expense.description);
+                              const { Icon, bg, text, customStyle } = getCategoryStyle(expense.categories?.color, expense.description);
 
                               return (
                                 <li 
@@ -470,7 +486,7 @@ export default function Dashboard() {
                                   className="cursor-pointer flex justify-between items-center p-3 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-200"
                                 >
                                   <div className="flex items-center space-x-4">
-                                    <div className={`${bg} p-2 rounded-lg ${text} shrink-0`}>
+                                  <div className={`${bg} p-2 rounded-lg ${text} shrink-0`} style={customStyle}>
                                       <Icon className="w-5 h-5" />
                                     </div>
                                     <div className="min-w-0">

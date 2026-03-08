@@ -2,7 +2,21 @@ import { useState, useEffect, useCallback } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { supabase } from '../supabaseClient';
 
-const COLORS = ['#2563EB', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
+// Fallback colors just in case a category has no color assigned
+const FALLBACK_COLORS = ['#2563EB', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
+
+// Helper to convert legacy strings or use the exact Hex Code
+const getChartColor = (colorStr, index) => {
+  if (!colorStr) return FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+  if (colorStr.startsWith('#')) return colorStr; 
+  
+  const legacyColors = {
+    blue: '#3b82f6', red: '#ef4444', green: '#22c55e',
+    purple: '#a855f7', orange: '#f97316', teal: '#14b8a6',
+    pink: '#ec4899', amber: '#f59e0b',
+  };
+  return legacyColors[colorStr] || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+};
 
 export default function ExpensePieChart({ householdId, refreshTrigger, selectedMonth = new Date() }) {
   const [data, setData] = useState([]);
@@ -12,34 +26,44 @@ export default function ExpensePieChart({ householdId, refreshTrigger, selectedM
   const fetchChartData = useCallback(async () => {
     setLoading(true);
     
-    // Use the passed selectedMonth instead of strictly today
     const date = new Date(selectedMonth);
     const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).toISOString();
     const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
+    // 1. ADDED 'color' to the categories fetch query
     const { data: expenses, error } = await supabase
       .from('expenses')
-      .select('amount, description, categories(name)')
+      .select('amount, description, categories(name, color)') 
       .eq('household_id', householdId)
       .gte('expense_date', firstDay)
       .lte('expense_date', lastDay);
 
     if (!error && expenses) {
       let runningTotal = 0;
+      
+      // 2. Map the data and keep track of the color
       const aggregated = expenses.reduce((acc, exp) => {
         if (exp.description?.startsWith('Settled Up:')) return acc; 
 
         const catName = exp.categories?.name || 'Untracked';
+        const catColor = exp.categories?.color || null;
         const amount = parseFloat(exp.amount);
         
         runningTotal += amount;
-        acc[catName] = (acc[catName] || 0) + amount;
+        
+        if (!acc[catName]) {
+          acc[catName] = { value: 0, color: catColor };
+        }
+        acc[catName].value += amount;
+        
         return acc;
       }, {});
 
+      // 3. Format it for Recharts
       const chartData = Object.keys(aggregated).map(key => ({
         name: key,
-        value: aggregated[key]
+        value: aggregated[key].value,
+        color: aggregated[key].color
       })).sort((a, b) => b.value - a.value);
 
       setData(chartData);
@@ -81,7 +105,8 @@ export default function ExpensePieChart({ householdId, refreshTrigger, selectedM
             stroke="none"
           >
             {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              // 4. Paint the slice using the exact category color!
+              <Cell key={`cell-${index}`} fill={getChartColor(entry.color, index)} />
             ))}
           </Pie>
 

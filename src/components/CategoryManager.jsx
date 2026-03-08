@@ -2,36 +2,42 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { X, Plus, Trash2, Tag, Edit2 } from 'lucide-react';
 
-// Predefined safe Tailwind colors for the user to choose from
-const COLOR_OPTIONS = [
-  { name: 'Blue', value: 'blue', bgClass: 'bg-blue-500' },
-  { name: 'Red', value: 'red', bgClass: 'bg-red-500' },
-  { name: 'Green', value: 'green', bgClass: 'bg-green-500' },
-  { name: 'Purple', value: 'purple', bgClass: 'bg-purple-500' },
-  { name: 'Orange', value: 'orange', bgClass: 'bg-orange-500' },
-  { name: 'Teal', value: 'teal', bgClass: 'bg-teal-500' },
-  { name: 'Pink', value: 'pink', bgClass: 'bg-pink-500' },
-  { name: 'Amber', value: 'amber', bgClass: 'bg-amber-500' },
-];
+// Helper to convert legacy Tailwind color strings to Hex codes for the picker
+const getDotColor = (colorStr) => {
+  if (!colorStr) return '#6b7280'; // Default gray
+  if (colorStr.startsWith('#')) return colorStr; // Already a hex code
+  
+  const legacyColors = {
+    blue: '#3b82f6',
+    red: '#ef4444',
+    green: '#22c55e',
+    purple: '#a855f7',
+    orange: '#f97316',
+    teal: '#14b8a6',
+    pink: '#ec4899',
+    amber: '#f59e0b',
+  };
+  return legacyColors[colorStr] || '#6b7280';
+};
 
 export default function CategoryManager({ isOpen, onClose, householdId, onCategoryUpdated }) {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   
-  // Form State
+  // Form State (Defaulting to a nice blue hex code)
   const [name, setName] = useState('');
   const [budget, setBudget] = useState('');
-  const [selectedColor, setSelectedColor] = useState('blue');
+  const [selectedColor, setSelectedColor] = useState('#3b82f6');
   const [error, setError] = useState(null);
   
-  // NEW: Track which category is being edited
+  // Track which category is being edited
   const [editingCategoryId, setEditingCategoryId] = useState(null);
 
   useEffect(() => {
     if (isOpen && householdId) {
       fetchCategories();
-      resetForm(); // Ensure form is clean when opened
+      resetForm();
     }
   }, [isOpen, householdId]);
 
@@ -52,16 +58,16 @@ export default function CategoryManager({ isOpen, onClose, householdId, onCatego
   const resetForm = () => {
     setName('');
     setBudget('');
-    setSelectedColor('blue');
+    setSelectedColor('#3b82f6');
     setEditingCategoryId(null);
     setError(null);
   };
 
-  // NEW: Populate form when Edit is clicked
   const handleEditClick = (category) => {
     setName(category.name);
     setBudget(category.monthly_budget || '');
-    setSelectedColor(category.color || 'blue');
+    // Convert old color names to hex so the color picker can read it!
+    setSelectedColor(getDotColor(category.color));
     setEditingCategoryId(category.id);
     setError(null);
   };
@@ -82,7 +88,7 @@ export default function CategoryManager({ isOpen, onClose, householdId, onCatego
           .update({
             name: name.trim(),
             monthly_budget: parseFloat(budget) || 0,
-            color: selectedColor
+            color: selectedColor // Now saves the exact Hex Code
           })
           .eq('id', editingCategoryId);
 
@@ -96,7 +102,7 @@ export default function CategoryManager({ isOpen, onClose, householdId, onCatego
             household_id: householdId, 
             name: name.trim(), 
             monthly_budget: parseFloat(budget) || 0,
-            color: selectedColor 
+            color: selectedColor // Now saves the exact Hex Code
           }]);
 
         if (insertError) throw insertError;
@@ -122,7 +128,7 @@ export default function CategoryManager({ isOpen, onClose, householdId, onCatego
       .eq('id', id);
 
     if (!error) {
-      if (editingCategoryId === id) resetForm(); // Clear form if they delete the one they are editing
+      if (editingCategoryId === id) resetForm();
       fetchCategories();
       if (onCategoryUpdated) onCategoryUpdated();
     }
@@ -162,7 +168,7 @@ export default function CategoryManager({ isOpen, onClose, householdId, onCatego
               )}
             </div>
             
-            <div className="flex space-x-2 mb-3">
+            <div className="flex space-x-2 mb-4">
               <input
                 type="text"
                 placeholder="Name (e.g. Groceries)"
@@ -183,22 +189,24 @@ export default function CategoryManager({ isOpen, onClose, householdId, onCatego
             </div>
             
             {/* Color Picker Row */}
-            <div className="flex items-center justify-between">
-              <div className="flex space-x-2">
-                {COLOR_OPTIONS.map(c => (
-                  <button
-                    key={c.value}
-                    type="button"
-                    onClick={() => setSelectedColor(c.value)}
-                    className={`w-6 h-6 rounded-full transition-all ${c.bgClass} ${
-                      selectedColor === c.value 
-                        ? 'ring-2 ring-offset-2 ring-gray-600 scale-110' 
-                        : 'opacity-50 hover:opacity-100 hover:scale-110'
-                    }`}
-                    title={c.name}
+            <div className="flex items-center justify-between border-t border-gray-200 pt-3 mt-1">
+              <div className="flex items-center space-x-3">
+                <label className="text-sm font-semibold text-gray-700">Category Color</label>
+                
+                {/* Custom Styled Native Color Picker */}
+                <div 
+                  className="relative w-8 h-8 rounded-full overflow-hidden border-2 border-gray-300 cursor-pointer shadow-sm hover:scale-110 transition-transform"
+                  title="Choose a color"
+                >
+                  <input
+                    type="color"
+                    value={selectedColor}
+                    onChange={(e) => setSelectedColor(e.target.value)}
+                    className="absolute inset-0 w-[150%] h-[150%] -top-1/4 -left-1/4 cursor-pointer p-0 border-0"
                   />
-                ))}
+                </div>
               </div>
+              
               <button
                 type="submit"
                 disabled={saving || !name.trim()}
@@ -224,19 +232,22 @@ export default function CategoryManager({ isOpen, onClose, householdId, onCatego
           ) : (
             <ul className="space-y-3">
               {categories.map((cat) => {
-                const catColorClass = COLOR_OPTIONS.find(c => c.value === cat.color)?.bgClass || 'bg-gray-500';
+                const hexColor = getDotColor(cat.color);
 
                 return (
                   <li key={cat.id} className={`flex justify-between items-center p-3 rounded-lg border shadow-sm transition-colors ${editingCategoryId === cat.id ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'}`}>
                     <div className="flex items-center space-x-3">
-                      <div className={`w-3 h-3 rounded-full ${catColorClass}`}></div>
+                      {/* Dynamic Color Dot */}
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: hexColor }}
+                      ></div>
                       <div>
                         <p className={`font-semibold ${editingCategoryId === cat.id ? 'text-blue-900' : 'text-gray-800'}`}>{cat.name}</p>
                         <p className={`text-xs ${editingCategoryId === cat.id ? 'text-blue-600' : 'text-gray-500'}`}>Budget: ₹{cat.monthly_budget?.toLocaleString('en-IN')}</p>
                       </div>
                     </div>
                     <div className="flex space-x-1">
-                      {/* NEW: Edit Button */}
                       <button
                         onClick={() => handleEditClick(cat)}
                         className="text-gray-400 hover:text-blue-600 transition-colors p-2 rounded hover:bg-blue-50"
